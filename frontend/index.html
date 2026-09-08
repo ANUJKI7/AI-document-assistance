@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Document Assistant</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h1>AI Document Assistant</h1>
+
+        <p>
+            Upload a document and ask questions about it.
+        </p>
+
+        <div class="upload-box">
+            <input type="file" id="document">
+            <button id="uploadButton">Upload Document</button>
+        </div>
+
+        <div class="question-box">
+            <input
+                type="text"
+                id="question"
+                placeholder="Ask a question..."
+            >
+
+            <button id="askButton">Ask AI</button>
+        </div>
+
+        <div id="response">
+            <h2>AI Response</h2>
+            <p id="answer">Your answer will appear here.</p>
+        </div>
+
+    </div>
+
+    <script src="script.js"></script>
+
+</body>
+</html>
