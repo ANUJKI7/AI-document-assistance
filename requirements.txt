@@ -3,3 +3,6 @@ uvicorn
 python-multipart
 azure-storage-blob
 python-dotenv
+pypdf
+pytesseract
+pypdfium2
