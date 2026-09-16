@@ -6,3 +6,5 @@ python-dotenv
 pypdf
 pytesseract
 pypdfium2
+sentence-transformers
+faiss-cpu
