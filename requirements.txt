@@ -8,3 +8,4 @@ pytesseract
 pypdfium2
 sentence-transformers
 faiss-cpu
+google-genai
