@@ -1,41 +1,48 @@
-from pdf_processor import extract_text_from_scanned_pdf
-
-
-def create_chunks(text, chunk_size=1000, overlap=200):
-
+def create_chunks(pages, chunk_size=1000, overlap=200):
     chunks = []
 
-    start = 0
+    for page in pages:
 
-    while start < len(text):
+        page_number = page["page"]
+        text = page["text"]
 
-        end = start + chunk_size
+        start = 0
 
-        chunk = text[start:end]
+        while start < len(text):
 
-        chunks.append(chunk)
+            end = start + chunk_size
 
-        start = end - overlap
+            chunk_text = text[start:end]
+
+            if chunk_text.strip():
+                chunks.append({
+                    "page": page_number,
+                    "text": chunk_text
+                })
+
+            start = end - overlap
 
     return chunks
 
 
 if __name__ == "__main__":
 
-    pdf_path = "uploads/(unit-5)the.pj.pdf"
+    sample_pages = [
+        {
+            "page": 1,
+            "text": "A" * 2500
+        },
+        {
+            "page": 2,
+            "text": "B" * 1500
+        }
+    ]
 
-    # 1. Extract text using OCR
-    text = extract_text_from_scanned_pdf(pdf_path)
+    chunks = create_chunks(sample_pages)
 
-    print("\nTotal characters:", len(text))
+    print("Number of chunks:", len(chunks))
 
-    # 2. Split text into chunks
-    chunks = create_chunks(text)
-
-    print("Total chunks:", len(chunks))
-
-    # 3. Display first 3 chunks
-    for i, chunk in enumerate(chunks[:3]):
-
-        print(f"\n========== CHUNK {i + 1} ==========")
-        print(chunk[:500])
+    for i, chunk in enumerate(chunks):
+        print(f"\nChunk {i + 1}")
+        print("Page:", chunk["page"])
+        print("Characters:", len(chunk["text"]))
