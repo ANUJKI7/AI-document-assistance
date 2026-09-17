@@ -1,5 +1,5 @@
-from pdf_processor import extract_pages_from_pdf
-from chunker import create_chunks
+from backend.pdf_processor import extract_pages_from_pdf
+from backend.chunker import create_chunks
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
