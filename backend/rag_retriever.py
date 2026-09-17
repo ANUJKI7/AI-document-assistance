@@ -1,4 +1,4 @@
-from pdf_processor import extract_text_from_scanned_pdf
+from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
@@ -39,11 +39,19 @@ def create_chunks(text, chunk_size=1000, overlap=200):
 # 3. Load PDF and create chunks
 # -----------------------------
 
-pdf_path = "uploads/(unit-5)the.pj.pdf"
+pdf_path = "uploads/DC Machine1.pdf"
 
-print("Reading PDF and performing OCR...")
+print("Reading PDF and extracting text...")
 
-text = extract_text_from_scanned_pdf(pdf_path)
+reader = PdfReader(pdf_path)
+
+text = ""
+
+for page in reader.pages:
+    page_text = page.extract_text()
+
+    if page_text:
+        text += page_text + "\n"
 
 print("Characters extracted:", len(text))
 
