@@ -19,7 +19,10 @@ load_dotenv()
 app = FastAPI()
 
 
-# Enable CORS
+# =========================
+# CORS
+# =========================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -62,14 +65,12 @@ gemini_client = genai.Client(
 
 
 # =========================
-# RAG
+# RAG STATE
 # =========================
 
-print("Building RAG retriever...")
-
-chunks, index = build_retriever()
-
-print("RAG retriever is ready.")
+chunks = None
+index = None
+current_document = None
 
 
 # =========================
@@ -85,28 +86,103 @@ def home():
 
 
 @app.post("/upload")
-def upload_document(
+async def upload_document(
     file: UploadFile = File(...)
 ):
 
+    global chunks
+    global index
+    global current_document
+
+
+    # Check file type
+    if not file.filename.lower().endswith(".pdf"):
+        return {
+            "error": "Only PDF files are supported."
+        }
+
+
+    # Create local uploads directory
+    os.makedirs("uploads", exist_ok=True)
+
+
+    # Local path for temporary processing
+    file_path = os.path.join(
+        "uploads",
+        file.filename
+    )
+
+
+    # Save uploaded file locally
+    with open(file_path, "wb") as buffer:
+
+        while True:
+
+            data = await file.read(1024 * 1024)
+
+            if not data:
+                break
+
+            buffer.write(data)
+    saved_size = os.path.getsize(file_path)
+
+    print("Original filename:", file.filename)
+    print("Saved file size:", saved_size, "bytes")
+
+
+    print("\n===== UPLOAD STARTED =====")
+    print("Filename:", file.filename)
+
+
+    # Upload PDF to Azure Blob Storage
     blob_client = blob_service_client.get_blob_client(
         container=CONTAINER_NAME,
         blob=file.filename
     )
 
-    blob_client.upload_blob(
-        file.file,
-        overwrite=True
-    )
+    with open(file_path, "rb") as data:
+
+        blob_client.upload_blob(
+            data,
+            overwrite=True
+        )
+
+
+    print("Uploaded to Azure Blob Storage.")
+
+
+    # Build RAG index from THIS uploaded PDF
+    print("\nBuilding RAG index for uploaded document...")
+
+    chunks, index = build_retriever(file_path)
+
+    current_document = file.filename
+
+    print("RAG index created successfully.")
+
 
     return {
-        "message": "File uploaded successfully to Azure",
-        "filename": file.filename
+        "message": "Document uploaded and processed successfully.",
+        "filename": file.filename,
+        "chunks": len(chunks)
     }
 
 
 @app.get("/ask")
 def ask_question(question: str):
+
+    global chunks
+    global index
+    global current_document
+
+
+    # Make sure a document has been uploaded
+    if chunks is None or index is None:
+
+        return {
+            "error": "Please upload a PDF before asking a question."
+        }
+
 
     # Retrieve relevant context
     context = retrieve_context(
@@ -117,7 +193,7 @@ def ask_question(question: str):
     )
 
 
-    # Create prompt for Gemini
+    # Prompt Gemini
     prompt = f"""
 You are an AI assistant that answers questions about a PDF document.
 
@@ -128,6 +204,9 @@ If the answer cannot be found in the context, say:
 "I could not find the answer in the provided document."
 
 Do not use outside knowledge.
+
+Document:
+{current_document}
 
 Context:
 {context}
@@ -147,5 +226,6 @@ Answer clearly and concisely.
 
 
     return {
+        "document": current_document,
         "answer": response.text
     }

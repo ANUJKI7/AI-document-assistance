@@ -1,21 +1,21 @@
 from backend.pdf_processor import extract_pages_from_pdf
 from backend.chunker import create_chunks
+
 from sentence_transformers import SentenceTransformer
+
 import faiss
 import numpy as np
 
 
-# Load embedding model
+# Load embedding model once
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
-# PDF location
-pdf_path = "uploads/DC Machine1.pdf"
 
-
-def build_retriever():
+def build_retriever(pdf_path):
 
     print("Reading PDF...")
 
+    # Extract text
     pages = extract_pages_from_pdf(pdf_path)
 
     total_characters = sum(
@@ -64,8 +64,10 @@ def build_retriever():
 
 def retrieve_context(question, chunks, index, top_k=3):
 
-    # Convert question into embedding
-    question_embedding = model.encode([question])
+    # Create embedding for question
+    question_embedding = model.encode(
+        [question]
+    )
 
     question_embedding = np.array(
         question_embedding,
@@ -83,7 +85,6 @@ def retrieve_context(question, chunks, index, top_k=3):
         number_of_results
     )
 
-    # Build context
     retrieved_context = ""
 
     print("\n===== RETRIEVED CHUNKS =====")
@@ -105,21 +106,3 @@ def retrieve_context(question, chunks, index, top_k=3):
         )
 
     return retrieved_context
-
-
-if __name__ == "__main__":
-
-    chunks, index = build_retriever()
-
-    question = input(
-        "\nAsk a question about the PDF: "
-    )
-
-    context = retrieve_context(
-        question,
-        chunks,
-        index
-    )
-
-    print("\n===== FINAL CONTEXT =====")
-    print(context)
