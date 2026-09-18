@@ -19,10 +19,7 @@ load_dotenv()
 app = FastAPI()
 
 
-# =========================
-# CORS
-# =========================
-
+# Allow frontend to communicate with backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,10 +28,7 @@ app.add_middleware(
 )
 
 
-# =========================
-# Azure Blob Storage
-# =========================
-
+# Azure Storage configuration
 AZURE_CONNECTION_STRING = os.getenv(
     "AZURE_STORAGE_CONNECTION_STRING"
 )
@@ -43,15 +37,13 @@ CONTAINER_NAME = os.getenv(
     "AZURE_STORAGE_CONTAINER"
 )
 
+
 blob_service_client = BlobServiceClient.from_connection_string(
     AZURE_CONNECTION_STRING
 )
 
 
-# =========================
-# Gemini
-# =========================
-
+# Gemini configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
@@ -59,23 +51,31 @@ if not GEMINI_API_KEY:
         "GEMINI_API_KEY is not set in the .env file"
     )
 
+
 gemini_client = genai.Client(
     api_key=GEMINI_API_KEY
 )
 
 
-# =========================
-# RAG STATE
-# =========================
+# =========================================================
+# MULTI-DOCUMENT RAG STORAGE
+# =========================================================
 
-chunks = None
+# All chunks from all uploaded documents
+all_chunks = []
+
+
+# One FAISS index shared by all documents
 index = None
-current_document = None
 
 
-# =========================
-# Routes
-# =========================
+# Information about uploaded documents
+documents = {}
+
+
+# =========================================================
+# HOME
+# =========================================================
 
 @app.get("/")
 def home():
@@ -85,62 +85,109 @@ def home():
     }
 
 
+# =========================================================
+# UPLOAD DOCUMENT
+# =========================================================
+
 @app.post("/upload")
 async def upload_document(
     file: UploadFile = File(...)
 ):
 
-    global chunks
+    global all_chunks
     global index
-    global current_document
+    global documents
 
 
     # Check file type
     if not file.filename.lower().endswith(".pdf"):
+
         return {
             "error": "Only PDF files are supported."
         }
 
 
-    # Create local uploads directory
-    os.makedirs("uploads", exist_ok=True)
+    # Prevent duplicate filename in current prototype
+    if file.filename in documents:
+
+        return {
+            "message": "This document is already uploaded.",
+            "filename": file.filename,
+            "document_id": documents[file.filename]["document_id"],
+            "chunks": documents[file.filename]["chunks"]
+        }
 
 
-    # Local path for temporary processing
+    # Create uploads directory
+    os.makedirs(
+        "uploads",
+        exist_ok=True
+    )
+
+
+    # Save uploaded PDF locally
     file_path = os.path.join(
         "uploads",
         file.filename
     )
 
 
-    # Save uploaded file locally
-    with open(file_path, "wb") as buffer:
+    with open(
+        file_path,
+        "wb"
+    ) as buffer:
 
         while True:
 
-            data = await file.read(1024 * 1024)
+            data = await file.read(
+                1024 * 1024
+            )
 
             if not data:
                 break
 
             buffer.write(data)
-    saved_size = os.path.getsize(file_path)
 
-    print("Original filename:", file.filename)
-    print("Saved file size:", saved_size, "bytes")
 
+    saved_size = os.path.getsize(
+        file_path
+    )
+
+
+    print(
+        "Original filename:",
+        file.filename
+    )
+
+    print(
+        "Saved file size:",
+        saved_size,
+        "bytes"
+    )
+
+
+    # =====================================================
+    # UPLOAD TO AZURE BLOB STORAGE
+    # =====================================================
 
     print("\n===== UPLOAD STARTED =====")
-    print("Filename:", file.filename)
+
+    print(
+        "Filename:",
+        file.filename
+    )
 
 
-    # Upload PDF to Azure Blob Storage
     blob_client = blob_service_client.get_blob_client(
         container=CONTAINER_NAME,
         blob=file.filename
     )
 
-    with open(file_path, "rb") as data:
+
+    with open(
+        file_path,
+        "rb"
+    ) as data:
 
         blob_client.upload_blob(
             data,
@@ -148,65 +195,141 @@ async def upload_document(
         )
 
 
-    print("Uploaded to Azure Blob Storage.")
+    print(
+        "Uploaded to Azure Blob Storage."
+    )
 
 
-    # Build RAG index from THIS uploaded PDF
-    print("\nBuilding RAG index for uploaded document...")
+    # =====================================================
+    # BUILD RAG FOR THIS DOCUMENT
+    # =====================================================
 
-    chunks, index = build_retriever(file_path)
-
-    current_document = file.filename
-
-    print("RAG index created successfully.")
+    print(
+        "\nBuilding RAG index for uploaded document..."
+    )
 
 
-    return {
-        "message": "Document uploaded and processed successfully.",
-        "filename": file.filename,
-        "chunks": len(chunks)
+    new_chunks, index = build_retriever(
+        file_path,
+        existing_index=index
+    )
+
+
+    # Add new document chunks to global chunk list
+    all_chunks.extend(
+        new_chunks
+    )
+
+
+    # Get document ID
+    document_id = new_chunks[0]["document_id"]
+
+
+    # Store document information
+    documents[file.filename] = {
+
+        "document_id": document_id,
+
+        "chunks": len(new_chunks)
     }
 
 
+    print(
+        "RAG index updated successfully."
+    )
+
+
+    print(
+        "Total documents:",
+        len(documents)
+    )
+
+
+    print(
+        "Total chunks:",
+        len(all_chunks)
+    )
+
+
+    print(
+        "Total vectors in FAISS:",
+        index.ntotal
+    )
+
+
+    return {
+
+        "message":
+            "Document uploaded and processed successfully.",
+
+        "filename":
+            file.filename,
+
+        "document_id":
+            document_id,
+
+        "chunks":
+            len(new_chunks),
+
+        "total_documents":
+            len(documents),
+
+        "total_chunks":
+            len(all_chunks),
+
+        "total_vectors":
+            index.ntotal
+    }
+
+
+# =========================================================
+# ASK QUESTION
+# =========================================================
+
 @app.get("/ask")
-def ask_question(question: str):
+def ask_question(
+    question: str
+):
 
-    global chunks
+    global all_chunks
     global index
-    global current_document
 
 
-    # Make sure a document has been uploaded
-    if chunks is None or index is None:
+    # Check whether any documents have been uploaded
+    if index is None or not all_chunks:
 
         return {
-            "error": "Please upload a PDF before asking a question."
+            "error":
+                "Please upload a PDF before asking a question."
         }
 
 
-    # Retrieve relevant context
+    # Retrieve relevant chunks from ALL documents
     context = retrieve_context(
         question,
-        chunks,
+        all_chunks,
         index,
         top_k=3
     )
 
 
-    # Prompt Gemini
+    # =====================================================
+    # GEMINI PROMPT
+    # =====================================================
+
     prompt = f"""
-You are an AI assistant that answers questions about a PDF document.
+You are an AI assistant that answers questions
+about uploaded PDF documents.
 
 Use ONLY the information provided in the context below.
 
+The context may contain information from multiple documents.
+
 If the answer cannot be found in the context, say:
 
-"I could not find the answer in the provided document."
+"I could not find the answer in the provided documents."
 
 Do not use outside knowledge.
-
-Document:
-{current_document}
 
 Context:
 {context}
@@ -220,12 +343,15 @@ Answer clearly and concisely.
 
     # Generate answer
     response = gemini_client.models.generate_content(
+
         model="gemini-3.6-flash",
+
         contents=prompt
     )
 
 
     return {
-        "document": current_document,
-        "answer": response.text
+
+        "answer":
+            response.text
     }

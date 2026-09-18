@@ -1,3 +1,6 @@
+import os
+import uuid
+
 from backend.pdf_processor import extract_pages_from_pdf
 from backend.chunker import create_chunks
 
@@ -11,11 +14,18 @@ import numpy as np
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
-def build_retriever(pdf_path):
+def build_retriever(pdf_path, existing_index=None):
 
     print("Reading PDF...")
 
-    # Extract text
+    # Create document information
+    filename = os.path.basename(pdf_path)
+    document_id = str(uuid.uuid4())
+
+    print("Document ID:", document_id)
+    print("Filename:", filename)
+
+    # Extract text from PDF
     pages = extract_pages_from_pdf(pdf_path)
 
     total_characters = sum(
@@ -25,10 +35,17 @@ def build_retriever(pdf_path):
 
     print("Characters extracted:", total_characters)
 
-    # Create chunks
-    chunks = create_chunks(pages)
+    # Create chunks with metadata
+    chunks = create_chunks(
+        pages,
+        document_id,
+        filename
+    )
 
     print("Chunks created:", len(chunks))
+
+    if not chunks:
+        raise ValueError("No text could be extracted from the PDF.")
 
     # Create embeddings
     print("\nCreating embeddings...")
@@ -50,11 +67,28 @@ def build_retriever(pdf_path):
 
     print("Embedding shape:", embeddings.shape)
 
-    # Create FAISS index
-    dimension = embeddings.shape[1]
+    # Create a new FAISS index only if one does not already exist
+    if existing_index is None:
 
-    index = faiss.IndexFlatL2(dimension)
+        dimension = embeddings.shape[1]
 
+        index = faiss.IndexFlatL2(dimension)
+
+        print("Created new FAISS index.")
+
+    else:
+
+        index = existing_index
+
+        # Make sure the embedding dimensions match
+        if index.d != embeddings.shape[1]:
+            raise ValueError(
+                "Embedding dimension does not match existing FAISS index."
+            )
+
+        print("Using existing FAISS index.")
+
+    # Add new document embeddings to the index
     index.add(embeddings)
 
     print("Vectors stored in FAISS:", index.ntotal)
@@ -64,7 +98,6 @@ def build_retriever(pdf_path):
 
 def retrieve_context(question, chunks, index, top_k=3):
 
-    # Create embedding for question
     question_embedding = model.encode(
         [question]
     )
@@ -74,7 +107,6 @@ def retrieve_context(question, chunks, index, top_k=3):
         dtype="float32"
     )
 
-    # Search FAISS
     number_of_results = min(
         top_k,
         len(chunks)
@@ -91,17 +123,21 @@ def retrieve_context(question, chunks, index, top_k=3):
 
     for i, index_number in enumerate(indices[0]):
 
+        document_id = chunks[index_number]["document_id"]
+        filename = chunks[index_number]["filename"]
         page_number = chunks[index_number]["page"]
         chunk_text = chunks[index_number]["text"]
 
         print(f"\n--- Result {i + 1} ---")
+        print("Document ID:", document_id)
+        print("Filename:", filename)
         print("Page:", page_number)
         print("Distance:", distances[0][i])
         print("Text:")
         print(chunk_text)
 
         retrieved_context += (
-            f"\n--- Source: Page {page_number} ---\n"
+            f"\n--- Source: {filename}, Page {page_number} ---\n"
             f"{chunk_text}\n"
         )
 
