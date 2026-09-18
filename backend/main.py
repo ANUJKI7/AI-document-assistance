@@ -5,6 +5,7 @@ from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
 
 from backend.rag_retriever import build_retriever, retrieve_context
+from backend.storage import save_rag_state, load_rag_state
 
 from google import genai
 
@@ -16,11 +17,17 @@ import hashlib
 load_dotenv()
 
 
-# Create FastAPI application
+# =========================================================
+# CREATE FASTAPI APPLICATION
+# =========================================================
+
 app = FastAPI()
 
 
-# Allow frontend to communicate with backend
+# =========================================================
+# CORS
+# =========================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -65,7 +72,7 @@ gemini_client = genai.Client(
 
 
 # =========================================================
-# MULTI-DOCUMENT RAG STORAGE
+# RAG STORAGE
 # =========================================================
 
 # All chunks from all unique documents
@@ -80,8 +87,58 @@ index = None
 documents = {}
 
 
-# SHA-256 hash → already processed document information
+# SHA-256 hash information
 document_hashes = {}
+
+
+# =========================================================
+# LOAD PERSISTENT RAG DATA WHEN SERVER STARTS
+# =========================================================
+
+@app.on_event("startup")
+def load_existing_rag_data():
+
+    global index
+    global all_chunks
+    global documents
+    global document_hashes
+
+    (
+        index,
+        all_chunks,
+        documents,
+        document_hashes
+    ) = load_rag_state()
+
+    print("\n===== RAG STORAGE LOADED =====")
+
+    print(
+        "Documents:",
+        len(documents)
+    )
+
+    print(
+        "Chunks:",
+        len(all_chunks)
+    )
+
+    if index is not None:
+
+        print(
+            "FAISS vectors:",
+            index.ntotal
+        )
+
+    else:
+
+        print(
+            "FAISS vectors: 0"
+        )
+
+    print(
+        "SHA-256 hashes:",
+        len(document_hashes)
+    )
 
 
 # =========================================================
@@ -256,8 +313,15 @@ async def upload_document(
             "filename"
         ]
 
-        existing_chunks = existing_document[
-            "chunks"
+
+        # Find existing chunks using document ID
+        existing_chunks = [
+
+            chunk
+
+            for chunk in all_chunks
+
+            if chunk["document_id"] == existing_document_id
         ]
 
 
@@ -288,8 +352,7 @@ async def upload_document(
         )
 
 
-        # Store this filename as another reference
-        # to the already processed document
+        # Store the new filename as another reference
         documents[file.filename] = {
 
             "document_id":
@@ -304,6 +367,19 @@ async def upload_document(
             "original_filename":
                 existing_filename
         }
+
+
+        # Save updated document metadata
+        save_rag_state(
+
+            index,
+
+            all_chunks,
+
+            documents,
+
+            document_hashes
+        )
 
 
         return {
@@ -352,12 +428,14 @@ async def upload_document(
 
 
     new_chunks, index = build_retriever(
+
         file_path,
+
         existing_index=index
     )
 
 
-    # Add new document chunks to global chunk list
+    # Add new chunks
     all_chunks.extend(
         new_chunks
     )
@@ -387,7 +465,7 @@ async def upload_document(
     }
 
 
-    # Store processed document using SHA-256
+    # Store SHA-256 information
     document_hashes[file_hash] = {
 
         "document_id":
@@ -399,6 +477,22 @@ async def upload_document(
         "chunks":
             new_chunks
     }
+
+
+    # =====================================================
+    # SAVE RAG STATE
+    # =====================================================
+
+    save_rag_state(
+
+        index,
+
+        all_chunks,
+
+        documents,
+
+        document_hashes
+    )
 
 
     print(
@@ -478,7 +572,7 @@ def ask_question(
         }
 
 
-    # Retrieve relevant chunks from ALL documents
+    # Retrieve relevant chunks
     context = retrieve_context(
 
         question,
