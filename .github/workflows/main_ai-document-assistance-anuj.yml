@@ -12,7 +12,6 @@ permissions:
 
 env:
   AZURE_WEBAPP_NAME: ai-document-assistance-anuj
-  AZURE_WEBAPP_PACKAGE_PATH: .
 
 jobs:
   build:
@@ -32,14 +31,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Build web app
-        uses: azure/appservice-build@v2
+      - name: Check Python version
+        run: |
+          python --version
+          pip --version
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          path: .
+          path: |
+            .
+            !venv/
+            !data/
+            !uploads/
+            !.git/
+            !__pycache__/
+            !**/__pycache__/
+            !*.pyc
 
   deploy:
     runs-on: ubuntu-latest
