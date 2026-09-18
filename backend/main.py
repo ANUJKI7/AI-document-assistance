@@ -9,6 +9,7 @@ from backend.rag_retriever import build_retriever, retrieve_context
 from google import genai
 
 import os
+import hashlib
 
 
 # Load environment variables
@@ -28,7 +29,10 @@ app.add_middleware(
 )
 
 
-# Azure Storage configuration
+# =========================================================
+# AZURE STORAGE CONFIGURATION
+# =========================================================
+
 AZURE_CONNECTION_STRING = os.getenv(
     "AZURE_STORAGE_CONNECTION_STRING"
 )
@@ -43,7 +47,10 @@ blob_service_client = BlobServiceClient.from_connection_string(
 )
 
 
-# Gemini configuration
+# =========================================================
+# GEMINI CONFIGURATION
+# =========================================================
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
@@ -61,7 +68,7 @@ gemini_client = genai.Client(
 # MULTI-DOCUMENT RAG STORAGE
 # =========================================================
 
-# All chunks from all uploaded documents
+# All chunks from all unique documents
 all_chunks = []
 
 
@@ -71,6 +78,10 @@ index = None
 
 # Information about uploaded documents
 documents = {}
+
+
+# SHA-256 hash → already processed document information
+document_hashes = {}
 
 
 # =========================================================
@@ -97,9 +108,13 @@ async def upload_document(
     global all_chunks
     global index
     global documents
+    global document_hashes
 
 
+    # -----------------------------------------------------
     # Check file type
+    # -----------------------------------------------------
+
     if not file.filename.lower().endswith(".pdf"):
 
         return {
@@ -107,25 +122,16 @@ async def upload_document(
         }
 
 
-    # Prevent duplicate filename in current prototype
-    if file.filename in documents:
+    # -----------------------------------------------------
+    # Save PDF locally
+    # -----------------------------------------------------
 
-        return {
-            "message": "This document is already uploaded.",
-            "filename": file.filename,
-            "document_id": documents[file.filename]["document_id"],
-            "chunks": documents[file.filename]["chunks"]
-        }
-
-
-    # Create uploads directory
     os.makedirs(
         "uploads",
         exist_ok=True
     )
 
 
-    # Save uploaded PDF locally
     file_path = os.path.join(
         "uploads",
         file.filename
@@ -167,6 +173,39 @@ async def upload_document(
 
 
     # =====================================================
+    # CALCULATE SHA-256
+    # =====================================================
+
+    sha256_hash = hashlib.sha256()
+
+
+    with open(
+        file_path,
+        "rb"
+    ) as file_data:
+
+        while True:
+
+            data = file_data.read(
+                1024 * 1024
+            )
+
+            if not data:
+                break
+
+            sha256_hash.update(data)
+
+
+    file_hash = sha256_hash.hexdigest()
+
+
+    print(
+        "SHA-256:",
+        file_hash
+    )
+
+
+    # =====================================================
     # UPLOAD TO AZURE BLOB STORAGE
     # =====================================================
 
@@ -201,11 +240,114 @@ async def upload_document(
 
 
     # =====================================================
-    # BUILD RAG FOR THIS DOCUMENT
+    # CHECK SHA-256 DUPLICATE
+    # =====================================================
+
+    if file_hash in document_hashes:
+
+        existing_document = document_hashes[file_hash]
+
+
+        existing_document_id = existing_document[
+            "document_id"
+        ]
+
+        existing_filename = existing_document[
+            "filename"
+        ]
+
+        existing_chunks = existing_document[
+            "chunks"
+        ]
+
+
+        print(
+            "\n===== DUPLICATE DOCUMENT DETECTED ====="
+        )
+
+        print(
+            "SHA-256 already exists."
+        )
+
+        print(
+            "Existing document:",
+            existing_filename
+        )
+
+        print(
+            "Existing document ID:",
+            existing_document_id
+        )
+
+        print(
+            "Reusing existing chunks and embeddings."
+        )
+
+        print(
+            "No new vectors added to FAISS."
+        )
+
+
+        # Store this filename as another reference
+        # to the already processed document
+        documents[file.filename] = {
+
+            "document_id":
+                existing_document_id,
+
+            "chunks":
+                len(existing_chunks),
+
+            "sha256":
+                file_hash,
+
+            "original_filename":
+                existing_filename
+        }
+
+
+        return {
+
+            "message":
+                "This document already exists. "
+                "Existing chunks and embeddings were reused.",
+
+            "filename":
+                file.filename,
+
+            "document_id":
+                existing_document_id,
+
+            "chunks":
+                len(existing_chunks),
+
+            "total_documents":
+                len(documents),
+
+            "total_chunks":
+                len(all_chunks),
+
+            "total_vectors":
+                index.ntotal,
+
+            "sha256":
+                file_hash,
+
+            "reused":
+                True
+        }
+
+
+    # =====================================================
+    # NEW DOCUMENT
     # =====================================================
 
     print(
-        "\nBuilding RAG index for uploaded document..."
+        "\nNew document detected."
+    )
+
+    print(
+        "Building RAG index for uploaded document..."
     )
 
 
@@ -225,12 +367,37 @@ async def upload_document(
     document_id = new_chunks[0]["document_id"]
 
 
-    # Store document information
+    # =====================================================
+    # STORE DOCUMENT INFORMATION
+    # =====================================================
+
     documents[file.filename] = {
 
-        "document_id": document_id,
+        "document_id":
+            document_id,
 
-        "chunks": len(new_chunks)
+        "chunks":
+            len(new_chunks),
+
+        "sha256":
+            file_hash,
+
+        "original_filename":
+            file.filename
+    }
+
+
+    # Store processed document using SHA-256
+    document_hashes[file_hash] = {
+
+        "document_id":
+            document_id,
+
+        "filename":
+            file.filename,
+
+        "chunks":
+            new_chunks
     }
 
 
@@ -278,7 +445,13 @@ async def upload_document(
             len(all_chunks),
 
         "total_vectors":
-            index.ntotal
+            index.ntotal,
+
+        "sha256":
+            file_hash,
+
+        "reused":
+            False
     }
 
 
@@ -295,10 +468,11 @@ def ask_question(
     global index
 
 
-    # Check whether any documents have been uploaded
+    # Check whether documents exist
     if index is None or not all_chunks:
 
         return {
+
             "error":
                 "Please upload a PDF before asking a question."
         }
@@ -306,9 +480,13 @@ def ask_question(
 
     # Retrieve relevant chunks from ALL documents
     context = retrieve_context(
+
         question,
+
         all_chunks,
+
         index,
+
         top_k=3
     )
 
