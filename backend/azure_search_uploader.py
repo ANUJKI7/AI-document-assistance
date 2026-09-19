@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
+from backend.embedding_model import get_embedding_model
 
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
@@ -23,9 +23,6 @@ if not SEARCH_KEY:
 
 
 # Load the SAME embedding model used by the existing RAG system.
-embedding_model = SentenceTransformer(
-    "all-MiniLM-L6-v2"
-)
 
 
 search_client = SearchClient(
@@ -66,10 +63,8 @@ def upload_chunks_to_azure(chunks, document_hash=""):
 
     print("Creating Azure Search embeddings...")
 
-    embeddings = embedding_model.encode(
-        texts,
-        show_progress_bar=True
-    )
+    embedding_model = get_embedding_model()
+    embeddings = embedding_model.encode(texts, show_progress_bar=True)
 
     embeddings = np.array(
         embeddings,

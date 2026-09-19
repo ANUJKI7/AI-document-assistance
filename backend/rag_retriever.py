@@ -4,14 +4,12 @@ import uuid
 from backend.pdf_processor import extract_pages_from_pdf
 from backend.chunker import create_chunks
 
-from sentence_transformers import SentenceTransformer
+from backend.embedding_model import get_embedding_model
 
 import faiss
 import numpy as np
 
 
-# Load embedding model once
-model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
 def build_retriever(pdf_path, existing_index=None):
@@ -55,6 +53,7 @@ def build_retriever(pdf_path, existing_index=None):
         for chunk in chunks
     ]
 
+    model = get_embedding_model()
     embeddings = model.encode(
         chunk_texts,
         show_progress_bar=True

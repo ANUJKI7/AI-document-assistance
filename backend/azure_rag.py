@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
+from backend.embedding_model import get_embedding_model
 
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
@@ -24,11 +24,7 @@ if not SEARCH_KEY:
     raise ValueError("AZURE_SEARCH_KEY is missing from .env")
 
 
-print("Loading embedding model for Azure RAG...")
 
-embedding_model = SentenceTransformer(
-    "all-MiniLM-L6-v2"
-)
 
 
 search_client = SearchClient(
@@ -44,9 +40,8 @@ def retrieve_from_azure(question, top_k=3):
     print("Question:", question)
 
     # Create embedding for the user's question
-    question_embedding = embedding_model.encode(
-        [question]
-    )[0]
+    embedding_model = get_embedding_model()
+    question_embedding = embedding_model.encode([question])[0]
 
     # Create vector search query
     vector_query = VectorizedQuery(
