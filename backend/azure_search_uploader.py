@@ -1,84 +1,58 @@
 import os
-
 import numpy as np
-from dotenv import load_dotenv
-from backend.embedding_model import get_embedding_model
 
+from dotenv import load_dotenv
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
-
 
 load_dotenv()
 
 SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT")
 SEARCH_KEY = os.getenv("AZURE_SEARCH_KEY")
+
 INDEX_NAME = "documents-index"
 
 
 if not SEARCH_ENDPOINT:
-    raise ValueError("AZURE_SEARCH_ENDPOINT is missing from .env")
+    raise ValueError(
+        "AZURE_SEARCH_ENDPOINT is missing from .env"
+    )
 
 if not SEARCH_KEY:
-    raise ValueError("AZURE_SEARCH_KEY is missing from .env")
-
-
-# Load the SAME embedding model used by the existing RAG system.
+    raise ValueError(
+        "AZURE_SEARCH_KEY is missing from .env"
+    )
 
 
 search_client = SearchClient(
     endpoint=SEARCH_ENDPOINT,
     index_name=INDEX_NAME,
-    credential=AzureKeyCredential(SEARCH_KEY),
+    credential=AzureKeyCredential(SEARCH_KEY)
 )
 
 
-def upload_chunks_to_azure(chunks, document_hash=""):
-    """
-    Upload chunks and their embeddings to Azure AI Search.
-
-    The chunks must already contain:
-        document_id
-        filename
-        page
-        text
-
-    Returns the number of successfully uploaded chunks.
-    """
+def upload_chunks_to_azure(
+    chunks,
+    embeddings,
+    document_hash=""
+):
 
     if not chunks:
-        print("No chunks to upload to Azure AI Search.")
         return 0
 
-    print("\n===== AZURE AI SEARCH INGESTION =====")
-    print("Chunks to upload:", len(chunks))
-
-    # --------------------------------------------------
-    # Create embeddings
-    # --------------------------------------------------
-
-    texts = [
-        chunk["text"]
-        for chunk in chunks
-    ]
-
-    print("Creating Azure Search embeddings...")
-
-    embedding_model = get_embedding_model()
-    embeddings = embedding_model.encode(texts, show_progress_bar=True)
+    if len(chunks) != len(embeddings):
+        raise ValueError(
+            "Number of chunks does not match number of embeddings."
+        )
 
     embeddings = np.array(
         embeddings,
         dtype="float32"
     )
 
-    print(
-        "Embedding shape:",
-        embeddings.shape
-    )
-
-    # --------------------------------------------------
-    # Build Azure Search documents
-    # --------------------------------------------------
+    print("\n===== AZURE AI SEARCH INGESTION =====")
+    print("Chunks received:", len(chunks))
+    print("Embedding shape:", embeddings.shape)
 
     documents = []
 
@@ -96,11 +70,8 @@ def upload_chunks_to_azure(chunks, document_hash=""):
 
         documents.append(document)
 
-    # --------------------------------------------------
-    # Upload in batches
-    # --------------------------------------------------
-
     batch_size = 100
+
     total_uploaded = 0
 
     for start in range(
@@ -115,42 +86,46 @@ def upload_chunks_to_azure(chunks, document_hash=""):
 
         print(
             f"Uploading batch "
-            f"{start // batch_size + 1}..."
+            f"{start + 1}-"
+            f"{start + len(batch)}..."
         )
 
-        results = search_client.upload_documents(
-            documents=batch
-        )
+        try:
 
-        successful = sum(
-            1
-            for result in results
-            if result.succeeded
-        )
+            results = search_client.upload_documents(
+                documents=batch
+            )
 
-        failed = len(results) - successful
-
-        total_uploaded += successful
-
-        print(
-            f"Uploaded: {successful}, "
-            f"Failed: {failed}"
-        )
-
-        if failed > 0:
+            successful = 0
 
             for result in results:
 
-                if not result.succeeded:
-
+                if result.succeeded:
+                    successful += 1
+                else:
                     print(
-                        "Azure Search upload error:",
+                        "Upload failed:",
+                        result.key,
                         result.error_message
                     )
 
+            total_uploaded += successful
+
+        except Exception as e:
+
+            print(
+                "Azure AI Search upload error:",
+                e
+            )
+
     print(
-        "Total successfully uploaded to Azure AI Search:",
+        "Total chunks uploaded:",
         total_uploaded
+    )
+
+    print(
+        "Total chunks failed:",
+        len(documents) - total_uploaded
     )
 
     return total_uploaded

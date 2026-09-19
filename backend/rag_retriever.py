@@ -92,7 +92,7 @@ def build_retriever(pdf_path, existing_index=None):
 
     print("Vectors stored in FAISS:", index.ntotal)
 
-    return chunks, index
+    return chunks, index, embeddings
 
 
 def retrieve_context(question, chunks, index, top_k=3):

@@ -434,19 +434,20 @@ async def upload_document(
     )
 
 
-    new_chunks, index = build_retriever(
-
-        file_path,
-
-        existing_index=index
+    new_chunks, index, embeddings = build_retriever(
+    file_path,
+    existing_index=index
     )
+
+
     # =====================================================
     # UPLOAD CHUNKS TO AZURE AI SEARCH
     # =====================================================
 
     azure_uploaded = upload_chunks_to_azure(
-       new_chunks,
-       document_hash=file_hash
+    new_chunks,
+    embeddings,
+    document_hash=file_hash
     )
 
     print(
