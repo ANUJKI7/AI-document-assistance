@@ -9,3 +9,4 @@ pypdfium2
 sentence-transformers
 faiss-cpu
 google-genai
+azure-search-documents

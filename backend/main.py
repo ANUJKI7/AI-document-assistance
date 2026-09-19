@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from backend.rag_retriever import build_retriever, retrieve_context
 from backend.storage import save_rag_state, load_rag_state
+from backend.azure_rag import retrieve_from_azure, build_context
 
 from google import genai
 
@@ -13,7 +14,10 @@ import os
 import hashlib
 
 
-# Load environment variables
+# =========================================================
+# LOAD ENVIRONMENT VARIABLES
+# =========================================================
+
 load_dotenv()
 
 
@@ -80,6 +84,7 @@ all_chunks = []
 
 
 # One FAISS index shared by all documents
+# We are keeping this for now as a fallback/local copy.
 index = None
 
 
@@ -308,6 +313,7 @@ async def upload_document(
         existing_document_id = existing_document[
             "document_id"
         ]
+
 
         existing_filename = existing_document[
             "filename"
@@ -562,7 +568,10 @@ def ask_question(
     global index
 
 
+    # -----------------------------------------------------
     # Check whether documents exist
+    # -----------------------------------------------------
+
     if index is None or not all_chunks:
 
         return {
@@ -572,16 +581,27 @@ def ask_question(
         }
 
 
-    # Retrieve relevant chunks
-    context = retrieve_context(
+    # =====================================================
+    # RETRIEVE RELEVANT CHUNKS FROM AZURE AI SEARCH
+    # =====================================================
 
+    retrieved_chunks = retrieve_from_azure(
         question,
-
-        all_chunks,
-
-        index,
-
         top_k=3
+    )
+
+
+    if not retrieved_chunks:
+
+        return {
+            "error":
+                "No relevant information was found "
+                "in Azure AI Search."
+        }
+
+
+    context = build_context(
+        retrieved_chunks
     )
 
 
@@ -613,7 +633,10 @@ Answer clearly and concisely.
 """
 
 
-    # Generate answer
+    # =====================================================
+    # GENERATE ANSWER
+    # =====================================================
+
     response = gemini_client.models.generate_content(
 
         model="gemini-3.6-flash",
