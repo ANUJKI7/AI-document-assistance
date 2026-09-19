@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from backend.rag_retriever import build_retriever, retrieve_context
 from backend.storage import save_rag_state, load_rag_state
 from backend.azure_rag import retrieve_from_azure, build_context
+from backend.azure_search_uploader import upload_chunks_to_azure
 
 from google import genai
 
@@ -438,6 +439,19 @@ async def upload_document(
         file_path,
 
         existing_index=index
+    )
+    # =====================================================
+    # UPLOAD CHUNKS TO AZURE AI SEARCH
+    # =====================================================
+
+    azure_uploaded = upload_chunks_to_azure(
+       new_chunks,
+       document_hash=file_hash
+    )
+
+    print(
+     "Azure AI Search chunks uploaded:",
+      azure_uploaded
     )
 
 

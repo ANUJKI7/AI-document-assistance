@@ -1,4 +1,3 @@
-import json
 import os
 
 import numpy as np
@@ -15,8 +14,6 @@ SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT")
 SEARCH_KEY = os.getenv("AZURE_SEARCH_KEY")
 INDEX_NAME = "documents-index"
 
-CHUNKS_FILE = "data/chunks.json"
-
 
 if not SEARCH_ENDPOINT:
     raise ValueError("AZURE_SEARCH_ENDPOINT is missing from .env")
@@ -25,8 +22,10 @@ if not SEARCH_KEY:
     raise ValueError("AZURE_SEARCH_KEY is missing from .env")
 
 
-print("Loading embedding model...")
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# Load the SAME embedding model used by the existing RAG system.
+embedding_model = SentenceTransformer(
+    "all-MiniLM-L6-v2"
+)
 
 
 search_client = SearchClient(
@@ -36,30 +35,38 @@ search_client = SearchClient(
 )
 
 
-def upload_chunks():
+def upload_chunks_to_azure(chunks, document_hash=""):
+    """
+    Upload chunks and their embeddings to Azure AI Search.
 
-    if not os.path.exists(CHUNKS_FILE):
-        raise FileNotFoundError(
-            f"Could not find {CHUNKS_FILE}. "
-            "Make sure your local RAG data exists."
-        )
+    The chunks must already contain:
+        document_id
+        filename
+        page
+        text
 
-    print("Loading chunks...")
-
-    with open(CHUNKS_FILE, "r", encoding="utf-8") as file:
-        chunks = json.load(file)
-
-    print("Total chunks:", len(chunks))
+    Returns the number of successfully uploaded chunks.
+    """
 
     if not chunks:
-        raise ValueError("No chunks found in chunks.json.")
+        print("No chunks to upload to Azure AI Search.")
+        return 0
 
-    print()
-    print("Creating embeddings...")
+    print("\n===== AZURE AI SEARCH INGESTION =====")
+    print("Chunks to upload:", len(chunks))
 
-    texts = [chunk["text"] for chunk in chunks]
+    # --------------------------------------------------
+    # Create embeddings
+    # --------------------------------------------------
 
-    embeddings = model.encode(
+    texts = [
+        chunk["text"]
+        for chunk in chunks
+    ]
+
+    print("Creating Azure Search embeddings...")
+
+    embeddings = embedding_model.encode(
         texts,
         show_progress_bar=True
     )
@@ -69,41 +76,60 @@ def upload_chunks():
         dtype="float32"
     )
 
-    print("Embedding shape:", embeddings.shape)
+    print(
+        "Embedding shape:",
+        embeddings.shape
+    )
+
+    # --------------------------------------------------
+    # Build Azure Search documents
+    # --------------------------------------------------
 
     documents = []
 
-    for i, chunk in enumerate(chunks):
+    for position, chunk in enumerate(chunks):
 
         document = {
-            "id": f"{chunk['document_id']}_{i}",
+            "id": f"{chunk['document_id']}_{position}",
             "document_id": chunk["document_id"],
             "filename": chunk["filename"],
             "page": chunk["page"],
             "text": chunk["text"],
-            "embedding": embeddings[i].tolist(),
-            "sha256": "",
+            "embedding": embeddings[position].tolist(),
+            "sha256": document_hash,
         }
 
         documents.append(document)
 
-    print()
-    print("Uploading documents to Azure AI Search...")
+    # --------------------------------------------------
+    # Upload in batches
+    # --------------------------------------------------
 
     batch_size = 100
-
     total_uploaded = 0
 
-    for start in range(0, len(documents), batch_size):
+    for start in range(
+        0,
+        len(documents),
+        batch_size
+    ):
 
-        batch = documents[start:start + batch_size]
+        batch = documents[
+            start:start + batch_size
+        ]
+
+        print(
+            f"Uploading batch "
+            f"{start // batch_size + 1}..."
+        )
 
         results = search_client.upload_documents(
             documents=batch
         )
 
         successful = sum(
-            1 for result in results
+            1
+            for result in results
             if result.succeeded
         )
 
@@ -112,28 +138,24 @@ def upload_chunks():
         total_uploaded += successful
 
         print(
-            f"Batch {start // batch_size + 1}: "
-            f"{successful} uploaded, "
-            f"{failed} failed"
+            f"Uploaded: {successful}, "
+            f"Failed: {failed}"
         )
 
         if failed > 0:
+
             for result in results:
+
                 if not result.succeeded:
+
                     print(
-                        "Upload error:",
+                        "Azure Search upload error:",
                         result.error_message
                     )
 
-    print()
-    print("========================================")
-    print("Azure upload completed")
-    print("========================================")
-    print("Total chunks:", len(chunks))
-    print("Successfully uploaded:", total_uploaded)
-    print("Index:", INDEX_NAME)
-    print()
+    print(
+        "Total successfully uploaded to Azure AI Search:",
+        total_uploaded
+    )
 
-
-if __name__ == "__main__":
-    upload_chunks()
+    return total_uploaded
