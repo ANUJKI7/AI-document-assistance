@@ -587,7 +587,7 @@ def ask_question(
     # Check whether documents exist
     # -----------------------------------------------------
 
-    if index is None or not all_chunks:
+    if not all_chunks:
 
         return {
 

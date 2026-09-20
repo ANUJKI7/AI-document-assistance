@@ -93,6 +93,7 @@ def retrieve_from_azure(question, top_k=3):
 def build_context(retrieved_chunks):
 
     context_parts = []
+    print("\n===== CONTEXT SENT TO GEMINI =====")
 
     for chunk in retrieved_chunks:
 
@@ -100,6 +101,10 @@ def build_context(retrieved_chunks):
             f"Source: {chunk['filename']}, "
             f"Page {chunk['page']}\n"
             f"{chunk['text']}"
+        )
+        print(
+          f"\n--- Context {len(context_parts)} ---\n"
+          f"{context_parts[-1]}"
         )
 
     return "\n\n".join(context_parts)
