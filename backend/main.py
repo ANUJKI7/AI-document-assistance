@@ -267,41 +267,73 @@ async def upload_document(
         file_hash
     )
 
-
     # =====================================================
     # UPLOAD TO AZURE BLOB STORAGE
     # =====================================================
 
-    print("\n===== UPLOAD STARTED =====")
+    print("\n===== UPLOAD STARTED =====") 
 
     print(
         "Filename:",
         file.filename
     )
 
+    blob_name = os.path.basename(file_path)
+
+    print(
+        "Blob name:",
+        blob_name
+    )
 
     blob_client = blob_service_client.get_blob_client(
         container=CONTAINER_NAME,
-        blob=file.filename
+        blob=blob_name
     )
 
+    BLOCK_SIZE = 1024 * 1024  # 1 MB
 
-    with open(
-        file_path,
-        "rb"
-    ) as data:
+    block_ids = []
 
-        blob_client.upload_blob(
-            data,
-            overwrite=True
-        )
+    with open(file_path, "rb") as data:
 
+        block_number = 0
+
+        while True:
+
+            block_data = data.read(BLOCK_SIZE)
+
+            if not block_data:
+                break
+
+            block_id = f"{block_number:06d}"
+
+            block_ids.append(block_id)
+
+            print(
+                f"Uploading block {block_number + 1} "
+                f"({len(block_data)} bytes)..."
+            )
+
+            blob_client.stage_block(
+                block_id=block_id,
+                data=block_data,
+                timeout=120
+            )
+
+            block_number += 1
+
+
+    print("All blocks uploaded.")
+
+    print("Committing blocks...")
+
+    blob_client.commit_block_list(
+        block_ids
+    )
 
     print(
         "Uploaded to Azure Blob Storage."
     )
-
-
     # =====================================================
     # CHECK SHA-256 DUPLICATE
     # =====================================================
