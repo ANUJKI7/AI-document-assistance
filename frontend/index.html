@@ -3,44 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Document Assistant</title>
+    <title>Dashboard - AI Document Assistant</title>
 
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
 
-    <div class="container">
+    <nav class="nav">
+        <span class="brand">AI Document Assistant</span>
+        <a href="index.html" class="active">Dashboard</a>
+        <a href="assistant.html">Assistant</a>
+    </nav>
 
-        <h1>AI Document Assistant</h1>
+    <div class="container wide">
 
-        <p>
-            Upload a document and ask questions about it.
-        </p>
-
-        <div class="upload-box">
-            <input type="file" id="document">
-            <button id="uploadButton">Upload Document</button>
+        <div class="page-header">
+            <div>
+                <h1>Dashboard</h1>
+                <p class="subtitle">Overview of your documents and activity.</p>
+            </div>
+            <button id="refreshButton" class="secondary">Refresh</button>
         </div>
 
-        <div class="question-box">
-            <input
-                type="text"
-                id="question"
-                placeholder="Ask a question..."
-            >
+        <p id="status" class="status"></p>
 
-            <button id="askButton">Ask AI</button>
+        <!-- Stat cards -->
+        <div class="stats">
+            <div class="card">
+                <span class="label">Documents</span>
+                <span class="value" id="statDocuments">–</span>
+            </div>
+            <div class="card">
+                <span class="label">Unique files</span>
+                <span class="value" id="statUnique">–</span>
+            </div>
+            <div class="card">
+                <span class="label">Chunks indexed</span>
+                <span class="value" id="statChunks">–</span>
+            </div>
+            <div class="card">
+                <span class="label">Vectors (FAISS)</span>
+                <span class="value" id="statVectors">–</span>
+            </div>
+            <div class="card">
+                <span class="label">Questions asked</span>
+                <span class="value" id="statQuestions">–</span>
+                <span class="hint">on this browser</span>
+            </div>
         </div>
 
-        <div id="response">
-            <h2>AI Response</h2>
-            <p id="answer">Your answer will appear here.</p>
+        <!-- Quick actions -->
+        <section class="panel">
+            <h2>Quick actions</h2>
+            <div class="actions">
+                <div class="upload-box">
+                    <input type="file" id="document" accept=".pdf">
+                    <button id="uploadButton">Upload PDF</button>
+                </div>
+                <a class="button-link secondary" href="assistant.html">Ask a question →</a>
+            </div>
+        </section>
+
+        <!-- Charts -->
+        <div class="grid">
+            <section class="panel">
+                <h2>Uploads over time</h2>
+                <div id="uploadsChart" class="chart"></div>
+            </section>
+
+            <section class="panel">
+                <h2>Document types</h2>
+                <div id="typesChart" class="chart"></div>
+            </section>
         </div>
+
+        <section class="panel">
+            <h2>Chunks per document</h2>
+            <div id="chunksChart" class="chart"></div>
+        </section>
+
+        <!-- Recent uploads -->
+        <section class="panel">
+            <h2>Recent uploads</h2>
+            <div id="documentsTable"></div>
+        </section>
+
+        <!-- Recent questions -->
+        <section class="panel">
+            <h2>Recent questions</h2>
+            <div id="questionsList"></div>
+        </section>
 
     </div>
 
-    <script src="script.js"></script>
+    <script src="config.js"></script>
+    <script src="history.js"></script>
+    <script src="dashboard.js"></script>
 
 </body>
 </html>
