@@ -13,6 +13,7 @@ from google import genai
 
 import os
 import hashlib
+from datetime import datetime, timezone
 
 
 # =========================================================
@@ -156,6 +157,76 @@ def home():
 
     return {
         "message": "AI Document Assistant is running!"
+    }
+
+
+# =========================================================
+# DASHBOARD
+# =========================================================
+
+@app.get("/dashboard")
+def dashboard():
+
+    # Summary of everything currently stored in the RAG state.
+    # Only real data is returned. Older documents may not have
+    # "uploaded_at" or "size_bytes" (added with this endpoint).
+
+    document_list = []
+
+    for filename, information in documents.items():
+
+        original_filename = information.get(
+            "original_filename",
+            filename
+        )
+
+        document_list.append({
+
+            "filename":
+                filename,
+
+            "document_id":
+                information.get("document_id"),
+
+            "chunks":
+                information.get("chunks", 0),
+
+            "size_bytes":
+                information.get("size_bytes"),
+
+            "uploaded_at":
+                information.get("uploaded_at"),
+
+            "duplicate_of":
+                original_filename
+                if original_filename != filename
+                else None
+        })
+
+
+    # Newest first; documents without a timestamp go last
+    document_list.sort(
+        key=lambda item: item["uploaded_at"] or "",
+        reverse=True
+    )
+
+
+    return {
+
+        "total_documents":
+            len(documents),
+
+        "unique_documents":
+            len(document_hashes),
+
+        "total_chunks":
+            len(all_chunks),
+
+        "total_vectors":
+            index.ntotal if index is not None else 0,
+
+        "documents":
+            document_list
     }
 
 
@@ -404,7 +475,13 @@ async def upload_document(
                 file_hash,
 
             "original_filename":
-                existing_filename
+                existing_filename,
+
+            "size_bytes":
+                saved_size,
+
+            "uploaded_at":
+                datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -514,7 +591,13 @@ async def upload_document(
             file_hash,
 
         "original_filename":
-            file.filename
+            file.filename,
+
+        "size_bytes":
+            saved_size,
+
+        "uploaded_at":
+            datetime.now(timezone.utc).isoformat()
     }
 
 
